@@ -1,0 +1,17 @@
+# TODO Features 
+
+- [x] client pool
+- [x] error handle
+- [x] request timeout
+- [x] unittest
+- [x] service proxy & register
+- [x] sample agent
+- [ ] multiprocess and run_in_executor
+- [x] proxy dead server handle
+- [x] proxy routing hint
+- [x] proxy client timeout set
+- [x] optimize and cache func signature
+- [ ] better str and bytes usage
+- [x] command line arguments parser
+- [ ] proxy bind at unix domain socket
+- [ ] agent control command
