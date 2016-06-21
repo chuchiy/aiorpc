@@ -19,6 +19,9 @@ class Foo(HeartbeatMixin, object):
         if self._keepalive_endp:
             self._activate_heartbeat(self._keepalive_endp, self._service_name, listener[1])
 
+    def default_params(self, a, b, c=None, d=1):
+        return a,b,c,d
+
     def set_cache(self, key, val):
         self.cache[key] = val
         return True

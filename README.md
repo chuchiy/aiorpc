@@ -1,11 +1,11 @@
-# aiorpc: python3 asyncio powered msgpack-rpc implementation 
+# aiorpc: msgpack-rpc implementation based on python3 asyncio
 
 ## Features
 
 - Full featured msgpack-rpc implementation(parallel pipeline, sync/async rpc call, etc). 
-- Real-world client pool for better server-2-server rpc call and connection management
-- Convenience backward compatibile rpc spec extension. such as request context, agent control command and named arguments support
-- Builtin service-proxy and keepalive server for production ready rpc services deployment
+- Client pool for better server-2-server rpc call and connection management
+- Convenience rpc spec extension with backward compatibile. such as request context, agent control command and named arguments support
+- Builtin service-proxy and keepalive server for large scale services deployment
 
 ## Getting Started
 
@@ -23,8 +23,6 @@ Server(('127.0.0.1', 10010), Foo()).run_forever()
 ``` 
 
 ### Client
-
-```python
 from aiorpc import Client
 import asyncio
 
@@ -36,7 +34,6 @@ loop = asyncio.get_event_loop()
 c = Client(('127.0.0.1', 10010), loop=loop)
 print('call result:', loop.run_until_complete(call(c)))
 loop.run_until_complete(c.stop())
-```
 
 ## Installation
 

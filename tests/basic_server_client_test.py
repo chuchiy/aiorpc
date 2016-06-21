@@ -12,6 +12,13 @@ def dead_client(event_loop):
     return client.Client(('127.0.0.1', 1), loop=event_loop, dead_wait_retry_sec=0.1)
 
 @pytest.mark.asyncio
+def test_reflection(rpc_server_client):
+    srv, c = rpc_server_client
+    r = yield from c.request(b'\0reflection')
+    assert [b'a', b'b', {b'name': b'c', b'default': None}, {b'name': b'd', b'default': 1}] == r[b'methods'][b'default_params']
+    yield from c.stop()
+
+@pytest.mark.asyncio
 def test_echo(rpc_server_client):
     srv, c = rpc_server_client
     p = [b'foo', b'bar']

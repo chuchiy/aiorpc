@@ -11,7 +11,7 @@ import socket
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
-FuncDef = namedtuple('FuncDef', ['func', 'with_context'])
+FuncDef = namedtuple('FuncDef', ['func', 'params', 'with_context'])
 
 def socket_bind(host, port):
     sock = socket.socket()
@@ -135,15 +135,15 @@ class Server(object):
             if callable(func):
                 funcsig = inspect.signature(func)
                 with_context = len(funcsig.parameters) and (next(iter(funcsig.parameters)) in ('ctx', 'context'))
-                funcdef = FuncDef(func, with_context)
+                funcdef = FuncDef(func, funcsig.parameters, with_context)
                 funcs[method] = funcdef
         return funcs
 
     def _get_exec_func(self, msg):
-        method = msg.method.decode()
-        if method.startswith('_'):
-            funcdef = self._get_control_command(method);
+        if msg.method.startswith(b'\0'):
+            funcdef = self._get_control_command(msg.method);
         else:
+            method = msg.method.decode()
             funcdef = self._app_funcs[method]
             #func = getattr(self._app, method)
         return funcdef
@@ -195,7 +195,17 @@ class Server(object):
             yield from writer.drain()
 
     def _get_control_command(self, method):
-        raise RuntimeError('unknown control method {}'.format(method))
+        method = method.decode()[1:]
+        funcdef = getattr(self, '_ctrl_cmd_{}'.format(method))()
+        return funcdef
+        
+    def _ctrl_cmd_reflection(self):
+        def wrap():
+            """ -> {'methodname': ['arg0', 'arg1', {'name': 'arg2', 'default': 'abc'}]}
+            """
+            methods = {name:[pdef.name if pdef.default == inspect.Parameter.empty else {'name': pdef.name, 'default': pdef.default} for pname, pdef in funcdef.params.items()] for name, funcdef in self._app_funcs.items()}
+            return {'methods': methods}
+        return FuncDef(wrap, None, False)
 
 
 def run(app, endp=('0.0.0.0', 8888), server_class=Server):
@@ -219,6 +229,9 @@ if __name__ == '__main__':
         def echo(self, *args):
             yield from asyncio.sleep(random.random(), loop=self._get_aio_loop())
             return args
+        
+        def test(self, a, b, c=2, d=None):
+            return 1
 
     app = App()
 
