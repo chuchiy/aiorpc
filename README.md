@@ -23,6 +23,8 @@ Server(('127.0.0.1', 10010), Foo()).run_forever()
 ``` 
 
 ### Client
+
+```python
 from aiorpc import Client
 import asyncio
 
@@ -34,6 +36,7 @@ loop = asyncio.get_event_loop()
 c = Client(('127.0.0.1', 10010), loop=loop)
 print('call result:', loop.run_until_complete(call(c)))
 loop.run_until_complete(c.stop())
+```
 
 ## Installation
 
