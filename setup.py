@@ -10,6 +10,7 @@ setup(name='aiorpc',
       author='Chu-Chi Yang', 
       author_email='chuchiyang@outlook.com', 
       packages=find_packages(), 
+      setup_requires=['pytest-runner'],
       install_requires=install_requires,
       tests_require=tests_requires
 )

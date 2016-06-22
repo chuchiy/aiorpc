@@ -3,7 +3,6 @@ import msgpack
 import logging
 from . import message
 import socket
-import time
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
@@ -14,23 +13,6 @@ DEFAULT_CONNECTION_ERROR_LIMIT = 3
 class ReplyError(RuntimeError):
     pass
 
-class ClientPool(object):
-
-    def __init__(self, loop, request_timeout=None, raise_when_dead=True):
-        self._clients = {}
-        self._loop = loop
-        self._request_timeout = request_timeout
-        self._raise_when_dead = raise_when_dead
-
-    def get(self, endpoint):
-        endpoint = tuple(endpoint)
-        c = self._clients.get(endpoint)
-        if not c:
-            c = Client(endpoint, loop=self._loop, request_timeout=self._request_timeout)
-            self._clients[endpoint] = c
-        if self._raise_when_dead and c.is_dead():
-            raise RuntimeError('client {} for {} is dead. try later'.format(c, c.endpoint()))
-        return c
 
 class NaiveClient(object):
 
@@ -97,7 +79,7 @@ class Client:
         return self._endpoint
 
     def is_dead(self):
-        if self._last_conn_error_time and time.time() - self._last_conn_error_time >= self._dead_wait_retry_sec:
+        if self._last_conn_error_time and self._loop.time() - self._last_conn_error_time >= self._dead_wait_retry_sec:
             self._conn_error_count = 0 
             self._last_conn_error_time = None
             return False
@@ -123,7 +105,7 @@ class Client:
                 self.recv_task = asyncio.async(self.recv_reply(), loop=self._loop)
             except ConnectionError as cerr:
                 self._conn_error_count += 1
-                self._last_conn_error_time = time.time()
+                self._last_conn_error_time = self._loop.time()
                 raise
 
     def send_quest(self, method, params):
@@ -191,6 +173,26 @@ class Client:
     def stop(self):
         self.writer.close()
         yield from self.recv_task
+
+class ClientPool(object):
+
+    def __init__(self, loop, client_class=Client, request_timeout=None, raise_when_dead=True):
+        self._clients = {}
+        self._loop = loop
+        self._client_class = client_class 
+        self._request_timeout = request_timeout
+        self._raise_when_dead = raise_when_dead
+
+    def get(self, endpoint, client_class=None):
+        endpoint = tuple(endpoint)
+        c = self._clients.get(endpoint)
+        if not c:
+            client_class = client_class or self._client_class
+            c = client_class(endpoint, loop=self._loop, request_timeout=self._request_timeout)
+            self._clients[endpoint] = c
+        if self._raise_when_dead and c.is_dead():
+            raise RuntimeError('client {} for {} is dead. try later'.format(c, c.endpoint()))
+        return c
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)

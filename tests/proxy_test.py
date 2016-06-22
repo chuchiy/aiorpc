@@ -19,7 +19,7 @@ def proxy_server(event_loop, keepalive_server):
 
 @pytest.fixture
 def proxy_cli(event_loop, proxy_server):
-    cli = Client(proxy_server.get_listener(), loop=event_loop)
+    cli = proxy.ProxyClient(proxy_server.get_listener(), loop=event_loop)
     return cli
 
 @pytest.fixture
@@ -40,6 +40,23 @@ def test_proxy_batch_invoke(proxy_cli, foo_servers, proxy_server, event_loop):
     batches = {'batches': [['sample.foo', 'echo', [i]] for i in range(10)]}
     r = yield from proxy_cli.request('batch_invoke', batches)
     assert [[i] for i in range(10)] == r
+
+@pytest.mark.asyncio
+def test_proxy_client_invoke(proxy_cli, foo_servers, proxy_server, event_loop):
+    yield from asyncio.sleep(0.02, loop=event_loop)
+    r = yield from proxy_cli.invoke('sample.foo', 'echo', ['a', 'b'])
+    assert [b'a', b'b'] == r
+    batches = proxy_cli.create_batch_invoke()
+    batches.add('sample.foo', 'echo', ['a', 'b'])
+    batches.add('sample.foo', 'add', 200, hint=1)
+    batches.add('sample.foo', 'add', 20, hint=1)
+    batches.add('sample.foo', 'add', 20, hint=2)
+    r = yield from batches.execute()
+    assert 4 == len(r)
+    assert [b'a', b'b'] == r[0]
+    assert 200 == r[1]
+    assert 220 == r[2]
+    assert 20 == r[3]
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,31 @@ from . import utils
 
 log = logging.getLogger(__name__)
 
+class BatchInvokeTask(object):
+
+    def __init__(self, client):
+        self._client = client
+        self._batches = []
+
+    def add(self, service, method, params, hint=None):
+        assert not hint or isinstance(hint, int), 'hint value should be int'
+        self._batches.append((service, method, params, hint))
+
+    def execute(self):
+        return self._client.request('batch_invoke', {"batches": self._batches})
+
+class ProxyClient(Client):
+
+    def invoke(self, service, method, params, hint=None):
+        p = {'service': service, 'method': method, 'params': params}
+        assert not hint or isinstance(hint, int), 'hint value should be int'
+        if hint:
+            p['__hint__'] = hint
+        return self.request('invoke', p)
+
+    def create_batch_invoke(self):
+        return BatchInvokeTask(self)
+
 class ProxyAgent(AgentMixin, object):
 
     def __init__(self, keepalive_endp, keepalive_update_interval=3):
@@ -45,10 +70,17 @@ class ProxyAgent(AgentMixin, object):
         client = self._get_client_by_service(service, ctx('__hint__'))
         return client.request(method, params)
 
-    def batch_invoke(self, ctx, batches):
+    def batch_invoke(self, batches):
         futures = []
-        for (service, method, params) in batches:
-            future = yield from self._get_client_by_service(service, ctx('__hint__')).send_quest(method, params) 
+        for item in batches:
+            hint = None
+            if len(item) == 4:
+                service, method, params, hint = item
+            elif len(item) == 3:
+                service, method, params = item
+            else:
+                raise RuntimeError("invalid batch invoke item: {}".format(item))
+            future = yield from self._get_client_by_service(service, hint).send_quest(method, params) 
             futures.append(future)
         results = yield from asyncio.gather(*futures, loop=self._get_aio_loop())
         return results

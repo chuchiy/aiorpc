@@ -3,7 +3,7 @@ import msgpack
 import logging
 import sys
 from . import message
-from .client import ClientPool
+from .client import ClientPool, Client
 import inspect
 from collections import namedtuple
 import socket
@@ -42,7 +42,7 @@ class AgentMixin(object):
 
 class Server(object):
 
-    def __init__(self, listener, app, *, loop=None, client_pool_request_timeout=None):
+    def __init__(self, listener, app, *, loop=None, client_pool_request_timeout=None, client_class=Client):
         self._listener = listener
         self._app = app
         self._app_funcs = self._get_app_funcs(self._app)
@@ -51,7 +51,7 @@ class Server(object):
         self._server = None
         client_pool_setter = getattr(self._app, '_set_client_pool', None)
         if client_pool_setter:
-            self._client_pool = ClientPool(self._loop, client_pool_request_timeout)
+            self._client_pool = ClientPool(self._loop, client_class, client_pool_request_timeout)
             client_pool_setter(self._client_pool)
         aio_loop_setter = getattr(self._app, '_set_aio_loop', None)
         if aio_loop_setter:

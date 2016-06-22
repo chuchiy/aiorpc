@@ -1,5 +1,4 @@
 from ..server import AgentMixin, Server
-import time
 import asyncio
 import logging
 import operator
@@ -43,7 +42,7 @@ class KeepAliveAgent(AgentMixin, object):
     def _check_service(self):
         log.debug('start check service status')
         services = defaultdict(dict) 
-        now = time.time() 
+        now = self._get_aio_loop().time() 
         for name, srvconf in self._services.items(): 
             for endp, conf in srvconf.items(): 
                 if now - conf['mtime'] <= self._hearbeat_timeout: 
@@ -60,7 +59,7 @@ class KeepAliveAgent(AgentMixin, object):
 
     def heartbeat(self, ctx, name, host, port, ident=None):
         peerip, peerport = ctx('peername')
-        now = time.time()
+        now = self._get_aio_loop().time()
         host = host or peerip
         endp = (host, port) 
         self._services[name][endp] = {'ident': ident, 'mtime': int(now)} 
