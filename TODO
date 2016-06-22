@@ -15,3 +15,4 @@
 - [x] command line arguments parser
 - [ ] proxy bind at unix domain socket
 - [x] agent control command
+- [ ] sample services
