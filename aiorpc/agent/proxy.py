@@ -12,13 +12,19 @@ class BatchInvokeTask(object):
     def __init__(self, client):
         self._client = client
         self._batches = []
+        self._results = None
 
     def add(self, service, method, params, hint=None):
         assert not hint or isinstance(hint, int), 'hint value should be int'
         self._batches.append((service, method, params, hint))
+        idx = len(self._batches) - 1
+        def get_result():
+            return self._results[idx]
+        return get_result
 
     def execute(self):
-        return self._client.request('batch_invoke', {"batches": self._batches})
+        self._results = yield from self._client.request('batch_invoke', {"batches": self._batches})
+        return self._results
 
 class ProxyClient(Client):
 
@@ -99,14 +105,12 @@ class ProxyAgent(AgentMixin, object):
 def run(cmd_args=None):
     import argparse
     parser = argparse.ArgumentParser(description='aiorpc service proxy')
-    parser.add_argument('keepalive', help="host:port of keepalive server")
-    parser.add_argument("-b", "--bind", default='127.0.0.1:9999', help="host:port to listened for proxy")
+    parser.add_argument('keepalive', help="host:port of keepalive server", type=utils.type_endp)
+    parser.add_argument("-b", "--bind", default='127.0.0.1:9999', help="host:port to listened for proxy", type=utils.type_endp)
     parser.add_argument("--workers", default='0', help="num of workers to start. default is 0, do not use multi process", type=int)
     with utils.set_common_command_args(parser, cmd_args) as args:
-        assert ':' in args.keepalive, 'keepalive server address is host:port'
-        assert ':' in args.bind, "proxy bind address should host:port"
-        app = ProxyAgent(args.keepalive.split(':', 1))
-        srv = Server(args.bind.split(':', 1), app)
+        app = ProxyAgent(args.keepalive)
+        srv = Server(args.bind, app)
         srv.start()
     srv.run_forever()
 

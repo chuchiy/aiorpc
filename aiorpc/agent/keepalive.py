@@ -68,11 +68,10 @@ class KeepAliveAgent(AgentMixin, object):
 def run(cmd_args=None):
     import argparse
     parser = argparse.ArgumentParser(description='keepalive server')
-    parser.add_argument("-b", "--bind", default='0.0.0.0:7999', help="host:port to listened for server")
+    parser.add_argument("-b", "--bind", default='0.0.0.0:7999', help="host:port to listened for server", type=utils.type_endp)
     with utils.set_common_command_args(parser, cmd_args) as args:
-        assert ':' in args.bind, "server bind address should be host:port"
         app = KeepAliveAgent()
-        srv = Server(args.bind.split(':', 1), app)
+        srv = Server(args.bind, app)
         srv.start()
     srv.run_forever()
 

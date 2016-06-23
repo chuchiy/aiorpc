@@ -48,7 +48,7 @@ def test_proxy_client_invoke(proxy_cli, foo_servers, proxy_server, event_loop):
     assert [b'a', b'b'] == r
     batches = proxy_cli.create_batch_invoke()
     batches.add('sample.foo', 'echo', ['a', 'b'])
-    batches.add('sample.foo', 'add', 200, hint=1)
+    add_r1 = batches.add('sample.foo', 'add', 200, hint=1)
     batches.add('sample.foo', 'add', 20, hint=1)
     batches.add('sample.foo', 'add', 20, hint=2)
     r = yield from batches.execute()
@@ -57,6 +57,7 @@ def test_proxy_client_invoke(proxy_cli, foo_servers, proxy_server, event_loop):
     assert 200 == r[1]
     assert 220 == r[2]
     assert 20 == r[3]
+    assert 200 == add_r1()
 
 
 @pytest.mark.asyncio

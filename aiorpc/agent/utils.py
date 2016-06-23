@@ -3,6 +3,13 @@ import os
 import pwd
 import logging
 
+def type_endp(value): 
+    try: 
+        host, port = value.split(':')
+        port = int(port) 
+    except ValueError: 
+        raise ValueError('endpoint type argument must be host:port') 
+    return (host, port) 
 
 @contextmanager
 def set_common_command_args(parser, cmd_args=None):

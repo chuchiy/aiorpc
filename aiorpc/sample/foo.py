@@ -43,14 +43,11 @@ class Foo(HeartbeatMixin, object):
 def run(cmd_args=None):
     import argparse
     parser = argparse.ArgumentParser(description='test foo server')
-    parser.add_argument('--keepalive', help="host:port of keepalive server")
-    parser.add_argument("-b", "--bind", default='127.0.0.1:0', help="host:port to listened for server")
+    parser.add_argument('--keepalive', help="host:port of keepalive server", type=utils.type_endp)
+    parser.add_argument("-b", "--bind", default='127.0.0.1:0', help="host:port to listened for server", type=utils.type_endp)
     with utils.set_common_command_args(parser, cmd_args) as args:
-        if args.keepalive:
-            assert ':' in args.keepalive, 'keepalive server address is host:port'
-        assert ':' in args.bind, "proxy bind address should be host:port"
-        app = Foo(keepalive_endp=args.keepalive.split(':', 1) if args.keepalive else None)
-        srv = Server(args.bind.split(':', 1), app)
+        app = Foo(keepalive_endp=args.keepalive)
+        srv = Server(args.bind, app)
         srv.start()
     srv.run_forever()
 
