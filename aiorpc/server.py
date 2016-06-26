@@ -40,15 +40,15 @@ class AgentMixin(object):
         """
         pass
 
-class Server(object):
-
-    def __init__(self, listener, app, *, loop=None, client_pool_request_timeout=None, client_class=Client):
-        self._listener = listener
+class BaseServer:
+    """server without network handle
+    """
+    
+    def __init__(self, app, *, loop=None, client_pool_request_timeout=None, client_class=Client):
         self._app = app
         self._app_funcs = self._get_app_funcs(self._app)
         log.debug("app expose funcs: %s", self._app_funcs)
         self._loop = loop or asyncio.get_event_loop()
-        self._server = None
         client_pool_setter = getattr(self._app, '_set_client_pool', None)
         if client_pool_setter:
             self._client_pool = ClientPool(self._loop, client_class, client_pool_request_timeout)
@@ -57,50 +57,18 @@ class Server(object):
         if aio_loop_setter:
             aio_loop_setter(self._loop)
 
-    def start(self):
-        if isinstance(self._listener, socket.socket):
-            coro = asyncio.start_server(self.handler, loop=self._loop, sock=self._listener)
-        else:
-            host, port = self._listener
-            coro = asyncio.start_server(self.handler, host, port, loop=self._loop)
-        self._server = self._loop.run_until_complete(coro)
-        self._listener = self._server.sockets[0].getsockname()
-        log.info('start server on %s', self._listener)
-        activated_func = getattr(self._app, '_activated', None)
-        if activated_func:
-            activated_func(self._listener)
-
-    def stop(self):
-        self._server.close()
-        self._loop.run_until_complete(self._server.wait_closed())
-
-    def get_app(self):
-        return self._app
-
-    def get_listener(self):
-        return self._listener
-
     def run_forever(self):
-        if not self._server:
-            self.start()
-        try:
-            self._loop.run_forever()
-        except KeyboardInterrupt:
-            pass
-
-        # Close the server
-        self._server.close()
-        self._loop.run_until_complete(self._server.wait_closed())
-        self._loop.close()
+        raise RuntimeError('please implement run_forever in subclass of {}'.format(__class__))
 
     @asyncio.coroutine
-    def handler(self, reader, writer):
+    def _handler(self, reader, writer):
         unpacker = msgpack.Unpacker()
         log.debug("connection from %s", writer.get_extra_info('peername'))
         try:
             sock = writer.get_extra_info('socket')
             #set TCP_NODELAY to disable Nagle's algorithm which will cause an initial 40ms delay for small packet rpc at linux
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            if sock:
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             while True:
                 buf = yield from reader.read(4096)
                 log.debug("recv dat: %s", buf)
@@ -118,7 +86,7 @@ class Server(object):
                     else:
                         raise RuntimeError('invalid message type {}'.format(msg[0]))
                     log.debug("recv msg: %s", msgobj)
-                    asyncio.async(self.process(msgobj, writer), loop=self._loop)
+                    asyncio.async(self._process(msgobj, writer), loop=self._loop)
         except:
             log.exception('handle %s except:', self._app)
         if not self._loop.is_closed():
@@ -176,7 +144,7 @@ class Server(object):
         return result
 
     @asyncio.coroutine 
-    def process(self, msg, writer):
+    def _process(self, msg, writer):
         result = None
         error = None
         try:
@@ -206,6 +174,50 @@ class Server(object):
             methods = {name:[pdef.name if pdef.default == inspect.Parameter.empty else {'name': pdef.name, 'default': pdef.default} for pname, pdef in funcdef.params.items()] for name, funcdef in self._app_funcs.items()}
             return {'methods': methods}
         return FuncDef(wrap, None, False)
+
+
+class Server(BaseServer):
+
+    def __init__(self, listener, app, **kwargs):
+        self._listener = listener
+        self._server = None
+        super().__init__(app, **kwargs)
+
+    def start(self):
+        if isinstance(self._listener, socket.socket):
+            coro = asyncio.start_server(self._handler, loop=self._loop, sock=self._listener)
+        else:
+            host, port = self._listener
+            coro = asyncio.start_server(self._handler, host, port, loop=self._loop)
+        self._server = self._loop.run_until_complete(coro)
+        self._listener = self._server.sockets[0].getsockname()
+        log.info('start server on %s', self._listener)
+        activated_func = getattr(self._app, '_activated', None)
+        if activated_func:
+            activated_func(self._listener)
+
+    def stop(self):
+        self._server.close()
+        self._loop.run_until_complete(self._server.wait_closed())
+
+    def get_app(self):
+        return self._app
+
+    def get_listener(self):
+        return self._listener
+
+    def run_forever(self):
+        if not self._server:
+            self.start()
+        try:
+            self._loop.run_forever()
+        except KeyboardInterrupt:
+            pass
+
+        # Close the server
+        self._server.close()
+        self._loop.run_until_complete(self._server.wait_closed())
+        self._loop.close()
 
 
 def run(app, endp=('0.0.0.0', 8888), server_class=Server):
