@@ -7,6 +7,7 @@ from .client import ClientPool, Client
 import inspect
 from collections import namedtuple
 import socket
+import functools
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -56,6 +57,8 @@ class BaseServer:
         aio_loop_setter = getattr(self._app, '_set_aio_loop', None)
         if aio_loop_setter:
             aio_loop_setter(self._loop)
+        self._recv_packet_tasks = {}
+        self._handler_id = 0
 
     def run_forever(self):
         raise RuntimeError('please implement run_forever in subclass of {}'.format(__class__))
@@ -64,35 +67,50 @@ class BaseServer:
     def _handler(self, reader, writer):
         unpacker = msgpack.Unpacker()
         log.debug("connection from %s", writer.get_extra_info('peername'))
+        sock = writer.get_extra_info('socket')
+        #set TCP_NODELAY to disable Nagle's algorithm which will cause an initial 40ms delay for small packet rpc at linux
+        if sock:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        tid = self._handler_id
+        self._handler_id += 1
+        task = asyncio.async(reader.read(32768), loop=self._loop)
+        task.add_done_callback(functools.partial(self._recv_packet, tid, unpacker, reader, writer))
+        self._recv_packet_tasks[tid] = task
+
+    def _recv_packet(self, tid, unpacker, reader, writer, future):
         try:
-            sock = writer.get_extra_info('socket')
-            #set TCP_NODELAY to disable Nagle's algorithm which will cause an initial 40ms delay for small packet rpc at linux
-            if sock:
-                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            while True:
-                buf = yield from reader.read(4096)
-                log.debug("recv dat: %s", buf)
-                if not buf:
-                    break
-                unpacker.feed(buf)
-                for msg in unpacker:
-                    assert isinstance(msg, (list, tuple)), 'message is not list or tuple'
-                    if msg[0] == message.TYPE_REQUEST:
-                        assert len(msg) == 4, 'malformed request message'
-                        msgobj = message.Request(*msg)
-                    elif msg[0] == message.TYPE_NOTIFICATION:
-                        assert len(msg) == 3, 'malformed notification message'
-                        msgobj = message.Notification(*msg)
-                    else:
-                        raise RuntimeError('invalid message type {}'.format(msg[0]))
-                    log.debug("recv msg: %s", msgobj)
-                    asyncio.async(self._process(msgobj, writer), loop=self._loop)
+            if future.cancelled():
+                return
+            ex = future.exception()
+            if ex:
+                raise ex
+            buf = future.result()
+            log.debug("recv dat: %s", buf)
+            if not buf:
+                raise RuntimeError('connection closed')
+            unpacker.feed(buf)
+            for msg in unpacker:
+                assert isinstance(msg, (list, tuple)), 'message is not list or tuple'
+                if msg[0] == message.TYPE_REQUEST:
+                    assert len(msg) == 4, 'malformed request message'
+                    msgobj = message.Request(*msg)
+                elif msg[0] == message.TYPE_NOTIFICATION:
+                    assert len(msg) == 3, 'malformed notification message'
+                    msgobj = message.Notification(*msg)
+                else:
+                    raise RuntimeError('invalid message type {}'.format(msg[0]))
+                log.debug("recv msg: %s", msgobj)
+                asyncio.async(self._process(msgobj, writer), loop=self._loop)
+            task = asyncio.async(reader.read(32768), loop=self._loop)
+            task.add_done_callback(functools.partial(self._recv_packet, tid, unpacker, reader, writer))
+            self._recv_packet_tasks[tid] = task
         except:
             log.exception('handle %s except:', self._app)
-        if not self._loop.is_closed():
-            log.debug('close client socket')
-            reader.feed_eof()
-            writer.close()
+            if not self._loop.is_closed():
+                log.debug('close client socket')
+                task = self._recv_packet_tasks.pop(tid)
+                reader.feed_eof()
+                writer.close()
 
     def _get_app_funcs(self, app):
         funcs = {}
@@ -175,6 +193,13 @@ class BaseServer:
             return {'methods': methods}
         return FuncDef(wrap, None, False)
 
+    def stop(self):
+        for tid, task in self._recv_packet_tasks.items():
+            task.cancel()
+        app_stop = getattr(self._app, 'stop', None)
+        if app_stop:
+            app_stop()
+
 
 class Server(BaseServer):
 
@@ -197,8 +222,9 @@ class Server(BaseServer):
             activated_func(self._listener)
 
     def stop(self):
+        super().stop()
         self._server.close()
-        self._loop.run_until_complete(self._server.wait_closed())
+        #self._loop.run_until_complete(self._server.wait_closed())
 
     def get_app(self):
         return self._app
@@ -215,7 +241,8 @@ class Server(BaseServer):
             pass
 
         # Close the server
-        self._server.close()
+        #self._server.close()
+        self.stop()
         self._loop.run_until_complete(self._server.wait_closed())
         self._loop.close()
 

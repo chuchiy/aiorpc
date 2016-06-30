@@ -14,7 +14,12 @@ class PipeClient(client.Client):
         super().__init__(None, **kwargs)
         self.reader = reader
         self.writer = writer
-        self.recv_task = asyncio.async(self.recv_reply(), loop=self._loop)
+        #self.recv_task = asyncio.async(self.recv_reply(), loop=self._loop)
+        self.recv_task = asyncio.async(self.reader.read(32768), loop=self._loop)
+        self.recv_task.add_done_callback(self.recv_reply)
+
+    def stop(self):
+        self.recv_task.cancel()
 
     @asyncio.coroutine
     def connect(self):
@@ -66,10 +71,12 @@ class PingAgent:
 
 class Worker(object):
 
-    def __init__(self, loop, server):
+    def __init__(self, loop, server, *, heartbeat_check_interval=2):
         self._loop = loop
         self._server = server
         self._started = False
+        self._halt = False
+        self._hb_check_interval = heartbeat_check_interval
         self.start()
 
     def do_heartbeat(self):
@@ -77,24 +84,29 @@ class Worker(object):
             try:
                 r = yield from self._hb_client.call('ping')
                 assert r == b'pong'
-                yield from asyncio.sleep(2, loop=self._loop)
+                yield from asyncio.sleep(self._hb_check_interval, loop=self._loop)
             except:
-                log.exception('parent of child {} heartbeat error. re-fork child'.format(self._child_pid))
+                if not self._halt:
+                    log.exception('parent of child {} heartbeat error. re-fork child'.format(self._child_pid))
                 break
-        self.kill_child()
-        self.start()
+        if not self._halt:
+            self.kill_child()
+            self.start()
 
     def kill_child(self):
         self._started = False
         self._pipe_stream.close() 
         os.kill(self._child_pid, signal.SIGKILL)
 
+    def get_child_pid(self):
+        return self._child_pid
+
     def parent_heartbeat(self, read_fd, write_fd):
         pstream = PipeStream(read_fd, write_fd, self._loop)
         stream_reader, stream_writer = yield from pstream.make_stream_pair()
         self._hb_client = PipeClient(stream_reader, stream_writer, loop=self._loop)
         self._pipe_stream = pstream
-        asyncio.async(self.do_heartbeat(), loop=self._loop)
+        self._hb_task = asyncio.async(self.do_heartbeat(), loop=self._loop)
 
     def child_heartbeat(self, read_fd, write_fd):
         app = PingAgent()
@@ -114,7 +126,7 @@ class Worker(object):
         pid = os.fork()
         if pid:
             # parent
-            log.info('create subprocess %s pipe [%s] [%s]', pid, read_from_child, write_to_child)
+            log.info('create subprocess %s', pid)
             self._child_pid = pid
             os.close(read_from_parent)
             os.close(write_to_parent)
@@ -124,11 +136,17 @@ class Worker(object):
             os.close(read_from_child)
             os.close(write_to_child)
 
+            log.info('enter subprocess')
             # cleanup after fork
             asyncio.set_event_loop(None)
             self._loop = asyncio.new_event_loop()
             self.child_heartbeat(read_from_parent, write_to_parent)
             self._server(loop=self._loop)
+
+    def halt(self):
+        self._halt = True
+        self._hb_task.cancel()
+        self._hb_client.stop()
 
 class Supervisor(object):
 
@@ -137,6 +155,16 @@ class Supervisor(object):
         self._server_starter = server_starter
         self._workers = []
         self.loop = asyncio.get_event_loop()
+    
+    def stop(self):
+        self.loop.remove_signal_handler(signal.SIGTERM)
+        workers = self._workers
+        self._workers = []
+        self.loop.stop()
+        for wkr in workers:
+            wkr.halt()
+            log.info('kill subporcess %s', wkr.get_child_pid())
+            os.kill(wkr.get_child_pid(), signal.SIGTERM) 
 
     def start(self):
 
@@ -145,14 +173,19 @@ class Supervisor(object):
             log.debug("start new process %s", idx)
             self._workers.append(Worker(self.loop, self._server_starter)) 
 
-        self.loop.add_signal_handler(signal.SIGINT, lambda: self.loop.stop()) 
-        self.loop.run_forever()
+#        self.loop.add_signal_handler(signal.SIGINT, self.stop) 
+        self.loop.add_signal_handler(signal.SIGTERM, self.stop) 
+        try:
+            self.loop.run_forever()
+        except KeyboardInterrupt as ex:
+            pass
 
+        self.stop()
 
 if __name__ == '__main__':
     from .server import Server, socket_bind
     from .sample import foo
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)-6s %(levelname)s %(process)s %(name)s.%(funcName)s:%(lineno)d : %(message)s')
 
     def server_run_forever(*args, **kwargs):
         def wrap(**wkwargs):

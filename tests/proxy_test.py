@@ -8,14 +8,15 @@ log = logging.getLogger(__name__)
 
 SERVER_APP_NUM = 3
 
-@pytest.yield_fixture
+@pytest.fixture
 def proxy_server(event_loop, keepalive_server):
     agt = proxy.ProxyAgent(keepalive_server.get_listener(), keepalive_update_interval=0.01)
     srv = Server(('127.0.0.1', 0), agt, loop=event_loop)
     srv.start()
-    yield srv
-    if event_loop.is_running():
-        srv.stop()
+    return srv
+    #if event_loop.is_running():
+    #    srv.stop()
+    #srv.stop()
 
 @pytest.fixture
 def proxy_cli(event_loop, proxy_server):
@@ -35,11 +36,16 @@ def foo_servers(event_loop, keepalive_server):
     return srvs
 
 @pytest.mark.asyncio
-def test_proxy_batch_invoke(proxy_cli, foo_servers, proxy_server, event_loop):
+def test_proxy_batch_invoke(proxy_cli, foo_servers, proxy_server, event_loop, keepalive_server):
     yield from asyncio.sleep(0.02, loop=event_loop)
     batches = {'batches': [['sample.foo', 'echo', [i]] for i in range(10)]}
     r = yield from proxy_cli.request('batch_invoke', batches)
     assert [[i] for i in range(10)] == r
+    proxy_cli.stop()
+    proxy_server.stop()
+    keepalive_server.stop()
+    for fsrv in foo_servers:
+        fsrv.stop()
 
 @pytest.mark.asyncio
 def test_proxy_client_invoke(proxy_cli, foo_servers, proxy_server, event_loop):

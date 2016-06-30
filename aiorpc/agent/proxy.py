@@ -1,4 +1,4 @@
-from ..server import Server, AgentMixin, run
+from ..server import Server, AgentMixin, run, socket_bind
 from ..client import Client
 import asyncio
 import logging
@@ -93,6 +93,7 @@ class ProxyAgent(AgentMixin, object):
 
     def stop(self):
         log.info("stop agent with loop %s", self._get_aio_loop())
+        self._keepalive.stop()
         self._services_update_task.cancel()
         self._set_aio_loop(None)
 
@@ -102,18 +103,32 @@ class ProxyAgent(AgentMixin, object):
         entry = next(cycle_endps) if not hint else endps[hint % len(endps)]
         return self._get_client(entry[b'endpoint'])
 
+def server_run_forever(*args, **kwargs):
+    def wrap(**wkwargs):
+        kwargs.update(wkwargs)
+        Server(*args, **kwargs).run_forever()
+        
+    return wrap
+
 def run(cmd_args=None):
     import argparse
+    from ..multiproc import Supervisor
     parser = argparse.ArgumentParser(description='aiorpc service proxy')
     parser.add_argument('keepalive', help="host:port of keepalive server", type=utils.type_endp)
     parser.add_argument("-b", "--bind", default='127.0.0.1:9999', help="host:port to listened for proxy", type=utils.type_endp)
     parser.add_argument("--workers", default='0', help="num of workers to start. default is 0, do not use multi process", type=int)
     with utils.set_common_command_args(parser, cmd_args) as args:
         app = ProxyAgent(args.keepalive)
-        srv = Server(args.bind, app)
-        srv.start()
-    srv.run_forever()
+        if args.workers:
+            listen_sock = socket_bind(args.bind[0], args.bind[1])
+        else:
+            srv = Server(args.bind, app)
+            srv.start()
 
+    if args.workers:
+        Supervisor(args.workers, server_run_forever(listen_sock, app)).start()
+    else:
+        srv.run_forever()
 
 if __name__ == '__main__':
     run()

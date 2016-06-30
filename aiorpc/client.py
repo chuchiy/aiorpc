@@ -102,7 +102,8 @@ class Client:
             try:
                 self.reader, self.writer = yield from asyncio.open_connection(host, port, loop=self._loop)
                 self._connected = True
-                self.recv_task = asyncio.async(self.recv_reply(), loop=self._loop)
+                self.recv_task = asyncio.async(self.reader.read(32768), loop=self._loop)
+                self.recv_task.add_done_callback(self.recv_reply)
             except ConnectionError as cerr:
                 self._conn_error_count += 1
                 self._last_conn_error_time = self._loop.time()
@@ -141,9 +142,15 @@ class Client:
         except asyncio.TimeoutError as e:
             raise TimeoutError('request exceed timeout limit {}s'.format(self._request_timeout))
 
-    @asyncio.coroutine
-    def recv_reply(self):
-        dat = yield from self.reader.read(4096*4)
+#    @asyncio.coroutine
+    def recv_reply(self, future):
+#        dat = yield from self.reader.read(4096*4)
+        if future.cancelled():
+            return
+        ex = future.exception()
+        if ex:
+            raise ex
+        dat = future.result()
         if not dat:
             log.debug("recv reply from %s error. close connection", self._endpoint)
             self.writer.close()
@@ -163,7 +170,9 @@ class Client:
                         fut.set_exception(ReplyError(*msg[2]))
                     else:
                         fut.set_result(msg[3])
-            self.recv_task = asyncio.async(self.recv_reply(), loop=self._loop)
+            #self.recv_task = asyncio.async(self.recv_reply(), loop=self._loop)
+            self.recv_task = asyncio.async(self.reader.read(32768), loop=self._loop)
+            self.recv_task.add_done_callback(self.recv_reply)
         except:
             self.writer.close()
             self.writer = self.reader = None
@@ -172,7 +181,12 @@ class Client:
 
     def stop(self):
         self.writer.close()
-        yield from self.recv_task
+        self.recv_task.cancel()
+        self.reader = self.writer = None
+
+#    def __del__(self):
+#        if self.reader and self.writer:
+#            self.stop()
 
 class ClientPool(object):
 

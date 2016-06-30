@@ -16,7 +16,8 @@ def test_reflection(rpc_server_client):
     srv, c = rpc_server_client
     r = yield from c.request(b'\0reflection')
     assert [b'a', b'b', {b'name': b'c', b'default': None}, {b'name': b'd', b'default': 1}] == r[b'methods'][b'default_params']
-    yield from c.stop()
+    c.stop()
+    srv.stop()
 
 @pytest.mark.asyncio
 def test_echo(rpc_server_client):
@@ -24,7 +25,8 @@ def test_echo(rpc_server_client):
     p = [b'foo', b'bar']
     r = yield from c.request('echo', p)
     assert r == p
-    yield from c.stop()
+    c.stop()
+    srv.stop()
 
 @pytest.mark.asyncio
 def test_dead_client(dead_client):
