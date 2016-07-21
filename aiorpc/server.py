@@ -23,7 +23,7 @@ def socket_bind(host, port):
     sock.setblocking(False)
     return sock
 
-class AgentMixin(object):
+class AgentMixin:
 
     def _set_aio_loop(self, loop):
         self._aio_loop = loop
@@ -265,7 +265,7 @@ def run(app, endp=('0.0.0.0', 8888), server_class=Server):
 
 if __name__ == '__main__':
     import random
-    class App(AgentMixin, object):
+    class App(AgentMixin):
 
         def recv_notify(self, txt):
             print('Noitfy:', txt)

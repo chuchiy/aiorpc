@@ -26,7 +26,7 @@ class HeartbeatMixin(AgentMixin):
 
         asyncio.async(keepalive_task(), loop=self._get_aio_loop())
 
-class KeepAliveAgent(AgentMixin, object):
+class KeepAliveAgent(AgentMixin):
 
     def __init__(self, hearbeat_timeout=30, service_check_interval=5):
         self._services = defaultdict(dict)

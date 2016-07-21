@@ -7,7 +7,7 @@ import logging
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
-class Foo(HeartbeatMixin, object):
+class Foo(HeartbeatMixin):
 
     def __init__(self, *, keepalive_endp=None, service_name='sample.foo'):
         self._service_name = service_name

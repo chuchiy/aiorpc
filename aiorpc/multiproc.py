@@ -69,7 +69,7 @@ class PingAgent:
     def ping(self):
         return 'pong'
 
-class Worker(object):
+class Worker:
 
     def __init__(self, loop, server, *, heartbeat_check_interval=2):
         self._loop = loop
@@ -83,7 +83,7 @@ class Worker(object):
         while True:
             try:
                 r = yield from self._hb_client.call('ping')
-                assert r == b'pong'
+                assert r == 'pong'
                 yield from asyncio.sleep(self._hb_check_interval, loop=self._loop)
             except GeneratorExit:
                 log.warning('heartbeat coro stop')
@@ -153,7 +153,7 @@ class Worker(object):
         self._hb_task.cancel()
         self._hb_client.stop()
 
-class Supervisor(object):
+class Supervisor:
 
     def __init__(self, worker_number, server_starter):
         self._worker_number = worker_number

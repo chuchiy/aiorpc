@@ -15,7 +15,7 @@ class ReplyError(RuntimeError):
     pass
 
 
-class NaiveClient(object):
+class NaiveClient:
 
     def __init__(self, endpoint):
         self._endpoint = endpoint
@@ -192,7 +192,7 @@ class Client:
 #        if self.reader and self.writer:
 #            self.stop()
 
-class ClientPool(object):
+class ClientPool:
 
     def __init__(self, loop, client_class=Client, request_timeout=None, raise_when_dead=True):
         self._clients = {}

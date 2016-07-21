@@ -7,7 +7,7 @@ from . import utils
 
 log = logging.getLogger(__name__)
 
-class BatchInvokeTask(object):
+class BatchInvokeTask:
 
     def __init__(self, client):
         self._client = client
@@ -38,7 +38,7 @@ class ProxyClient(Client):
     def create_batch_invoke(self):
         return BatchInvokeTask(self)
 
-class ProxyAgent(AgentMixin, object):
+class ProxyAgent(AgentMixin):
 
     def __init__(self, keepalive_endp, keepalive_update_interval=3):
         self._keepalive_endp = keepalive_endp
