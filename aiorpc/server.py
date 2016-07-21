@@ -1,5 +1,4 @@
 import asyncio
-import msgpack
 import logging
 import sys
 from . import message
@@ -8,11 +7,13 @@ import inspect
 from collections import namedtuple
 import socket
 import functools
+from .utils import packet_unpacker, packet_pack
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
 FuncDef = namedtuple('FuncDef', ['func', 'params', 'with_context'])
+
 
 def socket_bind(host, port):
     sock = socket.socket()
@@ -65,7 +66,7 @@ class BaseServer:
 
     @asyncio.coroutine
     def _handler(self, reader, writer):
-        unpacker = msgpack.Unpacker()
+        unpacker = packet_unpacker()
         log.debug("connection from %s", writer.get_extra_info('peername'))
         sock = writer.get_extra_info('socket')
         #set TCP_NODELAY to disable Nagle's algorithm which will cause an initial 40ms delay for small packet rpc at linux
@@ -85,9 +86,14 @@ class BaseServer:
             if ex:
                 raise ex
             buf = future.result()
-            log.debug("recv dat: %s", buf)
             if not buf:
-                raise RuntimeError('connection closed')
+                task = self._recv_packet_tasks.pop(tid)
+                writer.close()
+                log.debug("connection closed")
+                return
+            else:
+                log.debug("recv dat: %s", buf)
+
             unpacker.feed(buf)
             for msg in unpacker:
                 assert isinstance(msg, (list, tuple)), 'message is not list or tuple'
@@ -126,10 +132,10 @@ class BaseServer:
         return funcs
 
     def _get_exec_func(self, msg):
-        if msg.method.startswith(b'\0'):
+        if msg.method.startswith('\0'):
             funcdef = self._get_control_command(msg.method);
         else:
-            method = msg.method.decode()
+            method = msg.method
             funcdef = self._app_funcs[method]
             #func = getattr(self._app, method)
         return funcdef
@@ -142,8 +148,8 @@ class BaseServer:
                 result = func(writer.get_extra_info, *msg.params) 
             elif isinstance(msg.params, dict):
                 #every element key startswith __ and endswith __ is ctx
-                ctx = {k.decode():v for k,v in msg.params.items() if k.startswith(b'__') and k.endswith(b'__')}
-                params = {k.decode():v for k,v in msg.params.items() if not k.startswith(b'__') or not k.endswith(b'__')}
+                ctx = {k:v for k,v in msg.params.items() if k.startswith('__') and k.endswith('__')}
+                params = {k:v for k,v in msg.params.items() if not k.startswith('__') or not k.endswith('__')}
                 ctx_getter = lambda k:ctx.get(k, writer.get_extra_info(k))
                 result = func(ctx_getter, **params)
             elif msg.params == None:
@@ -154,7 +160,7 @@ class BaseServer:
             if isinstance(msg.params, (list, tuple)):
                 result = func(*msg.params) 
             elif isinstance(msg.params, dict):
-                result = func(**{key.decode():val for key, val in msg.params.items()})
+                result = func(**{key:val for key, val in msg.params.items()})
             elif msg.params == None:
                 result = func()
             else:
@@ -176,12 +182,12 @@ class BaseServer:
         if isinstance(msg, message.Request):
             reply = [message.TYPE_RESPONSE, msg.mid, error, result]
             log.debug('reply msg: %s', reply)
-            reply = msgpack.packb(reply)
+            reply = packet_pack(reply)
             writer.write(reply)
             yield from writer.drain()
 
     def _get_control_command(self, method):
-        method = method.decode()[1:]
+        method = method[1:]
         funcdef = getattr(self, '_ctrl_cmd_{}'.format(method))()
         return funcdef
         
@@ -243,8 +249,11 @@ class Server(BaseServer):
         # Close the server
         #self._server.close()
         self.stop()
+        for task in asyncio.Task.all_tasks():
+            task.cancel()
         self._loop.run_until_complete(self._server.wait_closed())
         self._loop.close()
+        sys.exit(0)
 
 
 def run(app, endp=('0.0.0.0', 8888), server_class=Server):

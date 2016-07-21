@@ -66,8 +66,12 @@ class ProxyAgent(AgentMixin, object):
                     self._services_cycle = {srvn:itertools.cycle(endps) for srvn, endps in services.items()}
             except KeyboardInterrupt:
                 raise
+            except asyncio.CancelledError as e:
+                log.warning("request task is cancelled")
+                break
             except:
                 log.exception("update services error")
+
             if self._get_aio_loop() and self._get_aio_loop().is_running():
                 log.debug('get services sleep %s for aio loop %s', self._keepalive_update_interval, self._get_aio_loop())
                 yield from asyncio.sleep(self._keepalive_update_interval, loop=self._get_aio_loop())
@@ -101,7 +105,7 @@ class ProxyAgent(AgentMixin, object):
         endps = self._services[service]
         cycle_endps = self._services_cycle[service]
         entry = next(cycle_endps) if not hint else endps[hint % len(endps)]
-        return self._get_client(entry[b'endpoint'])
+        return self._get_client(entry['endpoint'])
 
 def server_run_forever(*args, **kwargs):
     def wrap(**wkwargs):

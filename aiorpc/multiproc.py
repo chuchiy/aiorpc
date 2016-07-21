@@ -85,9 +85,14 @@ class Worker(object):
                 r = yield from self._hb_client.call('ping')
                 assert r == b'pong'
                 yield from asyncio.sleep(self._hb_check_interval, loop=self._loop)
+            except GeneratorExit:
+                log.warning('heartbeat coro stop')
+                return
             except:
                 if not self._halt:
                     log.exception('parent of child {} heartbeat error. re-fork child'.format(self._child_pid))
+                else:
+                    log.exception('parent of child {} heartbeat error.'.format(self._child_pid))
                 break
         if not self._halt:
             self.kill_child()
@@ -160,11 +165,15 @@ class Supervisor(object):
         self.loop.remove_signal_handler(signal.SIGTERM)
         workers = self._workers
         self._workers = []
-        self.loop.stop()
         for wkr in workers:
             wkr.halt()
             log.info('kill subporcess %s', wkr.get_child_pid())
             os.kill(wkr.get_child_pid(), signal.SIGTERM) 
+
+        for task in asyncio.Task.all_tasks():
+            task.cancel()
+
+        self.loop.close()
 
     def start(self):
 

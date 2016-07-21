@@ -1,8 +1,9 @@
 import asyncio
-import msgpack
 import logging
 from . import message
 import socket
+from .utils import packet_unpacker, packet_pack
+import msgpack
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
@@ -19,7 +20,7 @@ class NaiveClient(object):
     def __init__(self, endpoint):
         self._endpoint = endpoint
         self._msgid = 0
-        self._unpacker = msgpack.Unpacker()
+        self._unpacker = packet_unpacker()
         self._sock = None
 
     def connect(self):
@@ -40,7 +41,7 @@ class NaiveClient(object):
         self._msgid += 1
         quest = [message.TYPE_REQUEST, rmsgid, method, params]
         log.debug("send %s", quest)
-        dat = msgpack.packb(quest)
+        dat = packet_pack(quest)
         self._sock.sendall(dat)
         while True:
             dat = self._sock.recv(4096*4)
@@ -64,7 +65,7 @@ class Client:
         self._loop = loop or asyncio.get_event_loop()
         self._endpoint = endpoint
         self._msgid = 0
-        self._unpacker = msgpack.Unpacker()
+        self._unpacker = packet_unpacker()
         self._futures = {}
         self._request_timeout = request_timeout or DEFAULT_CLIENT_REQUEST_TIMEOUT
         self.reader = self.writer = None
@@ -74,6 +75,7 @@ class Client:
         self._conn_error_limit = conn_error_limit or DEFAULT_CONNECTION_ERROR_LIMIT
         self._conn_error_count = 0 
         self._last_conn_error_time = None
+        self.recv_task = None
 
     def endpoint(self):
         return self._endpoint
@@ -114,7 +116,7 @@ class Client:
             yield from self.connect()
         quest = [message.TYPE_REQUEST, self._msgid, method, params]
         log.debug("send %s", quest)
-        dat = msgpack.packb(quest)
+        dat = packet_pack(quest)
         self.writer.write(dat)
         future = asyncio.Future(loop=self._loop)
         self._futures[self._msgid] = future
@@ -126,7 +128,7 @@ class Client:
             yield from self.connect()
         quest = [message.TYPE_NOTIFICATION, method, params]
         log.debug("send %s", quest)
-        dat = msgpack.packb(quest)
+        dat = packet_pack(quest)
         self.writer.write(dat)
 
     def call(self, method, *args, **kwargs):
@@ -180,8 +182,10 @@ class Client:
             raise
 
     def stop(self):
-        self.writer.close()
-        self.recv_task.cancel()
+        if self.writer:
+            self.writer.close()
+        if self.recv_task:
+            self.recv_task.cancel()
         self.reader = self.writer = None
 
 #    def __del__(self):

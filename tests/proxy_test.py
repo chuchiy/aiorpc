@@ -8,6 +8,11 @@ log = logging.getLogger(__name__)
 
 SERVER_APP_NUM = 3
 
+def stop_all_task():
+    for task in asyncio.Task.all_tasks():
+        task.cancel()
+
+
 @pytest.fixture
 def proxy_server(event_loop, keepalive_server):
     agt = proxy.ProxyAgent(keepalive_server.get_listener(), keepalive_update_interval=0.01)
@@ -41,17 +46,13 @@ def test_proxy_batch_invoke(proxy_cli, foo_servers, proxy_server, event_loop, ke
     batches = {'batches': [['sample.foo', 'echo', [i]] for i in range(10)]}
     r = yield from proxy_cli.request('batch_invoke', batches)
     assert [[i] for i in range(10)] == r
-    proxy_cli.stop()
-    proxy_server.stop()
-    keepalive_server.stop()
-    for fsrv in foo_servers:
-        fsrv.stop()
+    stop_all_task()
 
 @pytest.mark.asyncio
 def test_proxy_client_invoke(proxy_cli, foo_servers, proxy_server, event_loop):
     yield from asyncio.sleep(0.02, loop=event_loop)
     r = yield from proxy_cli.invoke('sample.foo', 'echo', ['a', 'b'])
-    assert [b'a', b'b'] == r
+    assert ['a', 'b'] == r
     batches = proxy_cli.create_batch_invoke()
     batches.add('sample.foo', 'echo', ['a', 'b'])
     add_r1 = batches.add('sample.foo', 'add', 200, hint=1)
@@ -59,11 +60,12 @@ def test_proxy_client_invoke(proxy_cli, foo_servers, proxy_server, event_loop):
     batches.add('sample.foo', 'add', 20, hint=2)
     r = yield from batches.execute()
     assert 4 == len(r)
-    assert [b'a', b'b'] == r[0]
+    assert ['a', 'b'] == r[0]
     assert 200 == r[1]
     assert 220 == r[2]
     assert 20 == r[3]
     assert 200 == add_r1()
+    stop_all_task()
 
 
 @pytest.mark.asyncio
@@ -74,10 +76,11 @@ def test_proxy_invoke(proxy_cli, foo_servers, proxy_server, event_loop):
         r = yield from proxy_cli.request('invoke', {'method': 'set_cache', 'service': 'sample.foo', 'params': p})
         assert r == True
     for i, srv in enumerate(foo_servers):
-        assert i == srv.get_app().cache[b'foo']
+        assert i == srv.get_app().cache['foo']
     #yield from proxy_cli.stop()
     #yield from keepalive_cli.stop()
-    proxy_server.get_app().stop()
+    #proxy_server.get_app().stop()
+    stop_all_task()
     
 
 @pytest.mark.asyncio
@@ -88,4 +91,5 @@ def test_proxy_hint_invoke(proxy_cli, foo_servers, proxy_server, event_loop):
         r = yield from proxy_cli.request('invoke', {'method': 'add', 'service': 'sample.foo', 'params': [cnt], '__hint__': 100})
         cum += cnt
         assert r == cum
-    proxy_server.get_app().stop()
+    #proxy_server.get_app().stop()
+    stop_all_task()

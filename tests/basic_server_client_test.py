@@ -14,15 +14,15 @@ def dead_client(event_loop):
 @pytest.mark.asyncio
 def test_reflection(rpc_server_client):
     srv, c = rpc_server_client
-    r = yield from c.request(b'\0reflection')
-    assert [b'a', b'b', {b'name': b'c', b'default': None}, {b'name': b'd', b'default': 1}] == r[b'methods'][b'default_params']
+    r = yield from c.request('\0reflection')
+    assert ['a', 'b', {'name': 'c', 'default': None}, {'name': 'd', 'default': 1}] == r['methods']['default_params']
     c.stop()
     srv.stop()
 
 @pytest.mark.asyncio
 def test_echo(rpc_server_client):
     srv, c = rpc_server_client
-    p = [b'foo', b'bar']
+    p = ['foo', 'bar']
     r = yield from c.request('echo', p)
     assert r == p
     c.stop()
