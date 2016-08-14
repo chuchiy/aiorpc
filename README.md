@@ -76,9 +76,7 @@ for client code
 c.request('context_holder', {'message': 'Hello', '__ident__': 'test'})
 ```
 
-aiorpc support named arugments expand, you can use argument dict instead of argument list when invoke rpc request. 
-When the first argument of service agent method is `context` or `ctx`, a callable would be assign to `context`. You can
-get value by calling context with key which asyncio transport **get_extra_info** supported and all dict param name starts/ends 
+aiorpc support named arugments expansion, you can use argument dict instead of argument list when invoke rpc request. When the first argument of service agent method is `context` or `ctx`, a callable would be assign to `context`. You can get value by calling context with key which asyncio transport **get_extra_info** supported and all dict param name starts/ends 
 with __
 
 ### Control Method
@@ -94,6 +92,56 @@ c.request('\0reflection') #will return {'methodname': ['arg0', 'arg1', {'name': 
 
 aiorpc comes with some built-in agent server:
 
-- `aiorpc.agent.proxy`: request proxy/routing/load-balance.
-- `aiorpc.agent.keepalive`: agent register and discovery.
+### KeepAlive Server
 
+`aiorpc.agent.keepalive` is a register and discovery server. 
+
+```bash
+$ python3 -m aiorpc.agent.keepalive
+```
+rpc server can use `HeartbeatMixin` for handy register to keepalive server.
+
+```python
+from ..agent.keepalive import HeartbeatMixin
+
+class Foo(HeartbeatMixin):
+
+    def __init__(self, *, keepalive_endp=None, service_name='sample.foo'):
+        self._service_name = service_name
+        self._keepalive_endp = keepalive_endp
+
+    def _activated(self, listener):
+        if self._keepalive_endp:
+            #start heartbeat fiber to keepalive
+            self._activate_heartbeat(self._keepalive_endp, self._service_name, listener[1])
+```
+
+KeepAlive service expose two rpc method:
+
+```
+# service registration and heartbeat
+heartbeat(name, host, port, ident=None) 
+# get all activated service
+get_services() -> {"service_name": [{"ident": "srv1", "endpoint": ["8.8.8.8", 6000]}, ...], "service_name2": .... }
+```
+
+### Proxy Server
+
+`aioprc.agent.proxy` is a rpc request proxy/routing/load-balance server usually bind at local port.  
+Proxy agent will periodically load all the rpc service current alive from keepalive server.
+Local application/service could call remote rpc service by registered name through proxy
+
+```bash
+$ python3 -m aiorpc.agent.proxy endpoint_to_keepalive_server
+```
+Proxy serviec expose two rpc method
+
+```
+# call rpc method by service name registered at keepalive server
+# you can use __hint__ in params to indicate request goes to specific server if you register multi server for a same service
+invoke(service, method, params)
+
+# parallel call multi rpc method and get results
+# batches is list of [service, method, params] or [service, method, params, hint]
+batch_invoke(batches)
+```

@@ -95,7 +95,7 @@ class ProxyAgent(AgentMixin):
         results = yield from asyncio.gather(*futures, loop=self._get_aio_loop())
         return results
 
-    def stop(self):
+    def _stop(self):
         log.info("stop agent with loop %s", self._get_aio_loop())
         self._keepalive.stop()
         self._services_update_task.cancel()
